@@ -72,7 +72,25 @@ A complete guide to build a smart doorbell system with your ESP32-C6 DevKit that
    - Input helpers for advanced control
    - Node-RED flow example
 
-### 10. **.gitignore** - Version Control
+### 10. **BATTERY_MONITORING.md** - Battery Power & Monitoring
+   - Safe extraction of disposable vape LiPo batteries
+   - TP4056 connection and charging
+   - Voltage divider circuit for battery monitoring
+   - Home Assistant battery level integration
+   - Battery optimization and runtime calculations
+   - Safety guidelines and troubleshooting
+
+### 11. **TECHNICAL_REFERENCE.md** - Complete Technical Specs
+   - ESP32-C6 specifications and pinout
+   - Power consumption calculations
+   - Battery chemistry and voltage tables
+   - Component values and purposes
+   - All formulas and calculations
+   - Troubleshooting voltage references
+   - ESPHome configuration options
+   - Quick reference tables
+
+### 12. **.gitignore** - Version Control
    - Protects your secrets.yaml
    - Ignores build files
 

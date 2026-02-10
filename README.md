@@ -45,6 +45,7 @@ The system consists of:
 - [Secrets Template](secrets.yaml.example) - WiFi and password setup
 - [Home Assistant Automations](homeassistant-automation.yaml) - Automation examples
 - [Battery Monitoring Guide](BATTERY_MONITORING.md) - Using recycled vape batteries with charge monitoring
+- [Technical Reference](TECHNICAL_REFERENCE.md) - Complete specs, pinouts, calculations, and troubleshooting values
 
 ## Safety Notes
 
