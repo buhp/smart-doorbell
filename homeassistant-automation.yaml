@@ -1,0 +1,398 @@
+# Home Assistant Integration and Automation Examples
+
+This document shows how to integrate and automate your ESP32-C6 Smart Doorbell with Home Assistant.
+
+## Automatic Discovery
+
+After flashing the ESPHome firmware to your ESP32-C6, it will automatically appear in Home Assistant:
+
+1. Go to **Settings** → **Devices & Services**
+2. You should see a notification: "ESPHome: smart-doorbell"
+3. Click **Configure** and enter your API encryption key
+4. The device will be added with all entities
+
+## Available Entities
+
+After integration, you'll see these entities:
+
+### Binary Sensors
+- `binary_sensor.doorbell_button` - Detects button press
+- `binary_sensor.doorbell_status` - Device online/offline status
+
+### Switches
+- `switch.doorbell_ringer` - Manual control of the ringer
+- `switch.auto_ring_enabled` - Enable/disable auto-ring feature
+
+### Sensors
+- `sensor.doorbell_wifi_signal` - WiFi signal strength
+- `sensor.doorbell_uptime` - Device uptime
+- `sensor.doorbell_press_count` - Number of button presses
+
+### Buttons
+- `button.doorbell_restart` - Restart the device
+- `button.test_ring` - Test the ringer
+
+## Basic Automation Examples
+
+### 1. Simple Notification on Doorbell Press
+
+```yaml
+automation:
+  - alias: "Doorbell Pressed Notification"
+    description: "Send notification when doorbell is pressed"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.doorbell_button
+        from: "off"
+        to: "on"
+    action:
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "🔔 Doorbell"
+          message: "Someone is at the door!"
+          data:
+            priority: high
+            channel: doorbell
+            ttl: 0
+            notification_icon: mdi:doorbell
+```
+
+### 2. Ring Bell Only During Daytime
+
+```yaml
+automation:
+  - alias: "Doorbell Auto-Ring Daytime Only"
+    description: "Disable doorbell ringing at night (10 PM - 7 AM)"
+    trigger:
+      - platform: time
+        at: "22:00:00"  # 10 PM
+      - platform: time
+        at: "07:00:00"  # 7 AM
+    action:
+      - choose:
+          - conditions:
+              - condition: time
+                after: "22:00:00"
+                before: "07:00:00"
+            sequence:
+              - service: switch.turn_off
+                target:
+                  entity_id: switch.auto_ring_enabled
+              - service: notify.mobile_app_your_phone
+                data:
+                  message: "🔕 Doorbell ringer disabled (night mode)"
+        default:
+          - service: switch.turn_on
+            target:
+              entity_id: switch.auto_ring_enabled
+          - service: notify.mobile_app_your_phone
+            data:
+              message: "🔔 Doorbell ringer enabled"
+```
+
+### 3. Disable Ringing When Baby is Sleeping
+
+```yaml
+automation:
+  - alias: "Disable Doorbell When Baby Sleeping"
+    description: "Mute doorbell when baby sleep mode is active"
+    trigger:
+      - platform: state
+        entity_id: input_boolean.baby_sleeping
+    action:
+      - choose:
+          - conditions:
+              - condition: state
+                entity_id: input_boolean.baby_sleeping
+                state: "on"
+            sequence:
+              - service: switch.turn_off
+                target:
+                  entity_id: switch.auto_ring_enabled
+              - service: notify.mobile_app_your_phone
+                data:
+                  message: "🔕 Doorbell muted - Baby sleeping mode"
+        default:
+          - service: switch.turn_on
+            target:
+              entity_id: switch.auto_ring_enabled
+          - service: notify.mobile_app_your_phone
+            data:
+              message: "🔔 Doorbell unmuted"
+```
+
+### 4. Ring Bell with Custom Duration
+
+```yaml
+automation:
+  - alias: "Custom Doorbell Ring Duration"
+    description: "Ring for different durations based on time of day"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.doorbell_button
+        from: "off"
+        to: "on"
+    action:
+      # Disable auto-ring first
+      - service: switch.turn_off
+        target:
+          entity_id: switch.auto_ring_enabled
+      # Ring based on time
+      - choose:
+          # Short ring at night (1 second)
+          - conditions:
+              - condition: time
+                after: "22:00:00"
+                before: "07:00:00"
+            sequence:
+              - service: esphome.smart_doorbell_ring_doorbell
+                data:
+                  duration: 1000  # 1 second
+          # Normal ring during day (3 seconds)
+        default:
+          - service: esphome.smart_doorbell_ring_doorbell
+            data:
+              duration: 3000  # 3 seconds
+```
+
+### 5. Track Doorbell Activity
+
+```yaml
+automation:
+  - alias: "Log Doorbell Activity"
+    description: "Log all doorbell presses to a file"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.doorbell_button
+        from: "off"
+        to: "on"
+    action:
+      - service: notify.persistent_notification
+        data:
+          title: "Doorbell Log"
+          message: >
+            Doorbell pressed at {{ now().strftime('%Y-%m-%d %H:%M:%S') }}
+            Total presses today: {{ states('sensor.doorbell_press_count') }}
+```
+
+### 6. Flash Lights When Doorbell Pressed
+
+```yaml
+automation:
+  - alias: "Flash Lights on Doorbell"
+    description: "Flash house lights when doorbell is pressed (helpful for hearing impaired)"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.doorbell_button
+        from: "off"
+        to: "on"
+    action:
+      - service: light.turn_on
+        target:
+          entity_id: light.living_room
+        data:
+          brightness: 255
+          flash: long
+```
+
+### 7. Smart Doorbell with Camera Integration
+
+```yaml
+automation:
+  - alias: "Doorbell Camera Snapshot"
+    description: "Take camera snapshot when doorbell is pressed"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.doorbell_button
+        from: "off"
+        to: "on"
+    action:
+      - service: camera.snapshot
+        target:
+          entity_id: camera.front_door
+        data:
+          filename: "/config/www/doorbell_snapshots/{{ now().strftime('%Y%m%d_%H%M%S') }}.jpg"
+      - delay: 1
+      - service: notify.mobile_app_your_phone
+        data:
+          title: "🔔 Someone at the door"
+          message: "Doorbell pressed at {{ now().strftime('%H:%M:%S') }}"
+          data:
+            image: "/local/doorbell_snapshots/{{ now().strftime('%Y%m%d_%H%M%S') }}.jpg"
+```
+
+### 8. Presence-Based Auto-Ring
+
+```yaml
+automation:
+  - alias: "Ring Only When Someone Home"
+    description: "Only ring doorbell when someone is home"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.doorbell_button
+        from: "off"
+        to: "on"
+    condition:
+      - condition: state
+        entity_id: group.family
+        state: "home"
+    action:
+      - service: esphome.smart_doorbell_ring_doorbell
+        data:
+          duration: 2000
+      - service: notify.mobile_app_your_phone
+        data:
+          message: "🔔 Someone at the door"
+```
+
+## Dashboard Card Examples
+
+### Entities Card
+
+```yaml
+type: entities
+title: Smart Doorbell
+entities:
+  - entity: binary_sensor.doorbell_button
+    name: Button Status
+  - entity: switch.auto_ring_enabled
+    name: Auto Ring
+  - entity: switch.doorbell_ringer
+    name: Manual Ring Control
+  - entity: sensor.doorbell_press_count
+    name: Presses Today
+  - entity: sensor.doorbell_wifi_signal
+    name: WiFi Signal
+  - entity: button.test_ring
+    name: Test Ring
+```
+
+### Button Card for Quick Control
+
+```yaml
+type: button
+entity: switch.auto_ring_enabled
+name: Auto Ring
+icon: mdi:bell-check
+tap_action:
+  action: toggle
+hold_action:
+  action: more-info
+```
+
+### History Card
+
+```yaml
+type: history-graph
+title: Doorbell Activity
+entities:
+  - entity: binary_sensor.doorbell_button
+    name: Button Presses
+hours_to_show: 24
+refresh_interval: 0
+```
+
+### Markdown Card with custom service calls
+
+```yaml
+type: markdown
+title: Doorbell Controls
+content: |
+  **Quick Actions:**
+  
+  <ha-icon icon="mdi:bell-ring"></ha-icon> [Ring 1 sec](tap-action://perform-action/esphome.smart_doorbell_ring_doorbell?duration=1000)
+  
+  <ha-icon icon="mdi:bell-ring"></ha-icon> [Ring 3 sec](tap-action://perform-action/esphome.smart_doorbell_ring_doorbell?duration=3000)
+  
+  <ha-icon icon="mdi:bell-ring"></ha-icon> [Ring 5 sec](tap-action://perform-action/esphome.smart_doorbell_ring_doorbell?duration=5000)
+```
+
+## Input Helpers for Advanced Control
+
+Create these input helpers in Home Assistant (Settings → Devices & Services → Helpers):
+
+### Boolean for Baby Sleep Mode
+```yaml
+input_boolean:
+  baby_sleeping:
+    name: Baby Sleeping Mode
+    icon: mdi:baby
+```
+
+### Number for Ring Duration
+```yaml
+input_number:
+  doorbell_ring_duration:
+    name: Doorbell Ring Duration
+    min: 500
+    max: 10000
+    step: 500
+    unit_of_measurement: ms
+    icon: mdi:timer
+```
+
+### Select for Doorbell Mode
+```yaml
+input_select:
+  doorbell_mode:
+    name: Doorbell Mode
+    options:
+      - Normal
+      - Silent (Notification Only)
+      - Disabled
+      - Custom Duration
+    icon: mdi:bell-cog
+```
+
+## Node-RED Flow Example
+
+For Node-RED users, here's a simple flow:
+
+```json
+[
+    {
+        "id": "doorbell_trigger",
+        "type": "server-state-changed",
+        "z": "your_flow_id",
+        "name": "Doorbell Button",
+        "server": "home_assistant",
+        "version": 4,
+        "exposeToHomeAssistant": false,
+        "entityid": "binary_sensor.doorbell_button",
+        "output_location": "payload",
+        "output_location_type": "msg",
+        "outputInitially": false,
+        "state_type": "str",
+        "x": 120,
+        "y": 80
+    },
+    {
+        "id": "check_time",
+        "type": "api-current-state",
+        "z": "your_flow_id",
+        "name": "Check Time",
+        "server": "home_assistant",
+        "version": 3,
+        "outputs": 2,
+        "x": 310,
+        "y": 80
+    }
+]
+```
+
+## Troubleshooting Automations
+
+If automations don't work:
+
+1. **Check entity names**: Ensure entity IDs match your actual device
+2. **Check automation mode**: Some automations need `mode: single` or `mode: queued`
+3. **Enable trace**: Use the automation trace feature to debug
+4. **Check conditions**: Verify all conditions are met
+5. **Test manually**: Use Developer Tools → Services to test service calls
+
+## Next Steps
+
+- Customize automations to your needs
+- Add more complex logic with scripts
+- Integrate with other smart home devices
+- Set up voice control with Alexa/Google Home via Home Assistant

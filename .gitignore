@@ -1,0 +1,51 @@
+# ESPHome Smart Doorbell - Ignore patterns
+
+# Secrets file - NEVER commit this
+secrets.yaml
+
+# ESPHome build files
+.esphome/
+*.bin
+*.elf
+*.map
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.old
+
+# Images and videos (if you store doorbell snapshots here)
+snapshots/
+*.jpg
+*.png
+*.mp4
+*.avi
+
+# Documentation builds
+_build/
+docs/_build/
+
+# OS
+Thumbs.db
+desktop.ini

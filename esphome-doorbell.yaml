@@ -1,0 +1,230 @@
+# ESPHome Configuration for Smart Doorbell
+# ESP32-C6 DevKit Smart Doorbell System
+# 
+# This configuration provides:
+# - Binary sensor for doorbell button detection
+# - Switch for doorbell ringer control
+# - Automatic Home Assistant integration via API
+# - OTA updates
+# - Web interface for debugging
+
+esphome:
+  name: smart-doorbell
+  friendly_name: Smart Doorbell
+  comment: ESP32-C6 Smart Doorbell with HA Integration
+  
+  # Optional: Run actions when device boots
+  on_boot:
+    priority: -100
+    then:
+      # Ensure ringer is off on boot
+      - switch.turn_off: doorbell_ringer
+      - logger.log: "Smart Doorbell System Started"
+
+esp32:
+  board: esp32-c6-devkitc-1
+  variant: esp32c6
+  framework:
+    type: esp-idf
+
+# Enable logging
+logger:
+  level: INFO
+  logs:
+    sensor: INFO
+    binary_sensor: INFO
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption_key
+  services:
+    # Create a service to ring the bell from HA
+    - service: ring_doorbell
+      variables:
+        duration: int
+      then:
+        - logger.log: 
+            format: "Ringing doorbell for %d ms"
+            args: [ 'duration' ]
+        - switch.turn_on: doorbell_ringer
+        - delay: !lambda "return duration;"
+        - switch.turn_off: doorbell_ringer
+
+# Enable OTA updates
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+# WiFi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  
+  # Enable fallback hotspot (captive portal) in case WiFi fails
+  ap:
+    ssid: "Smart-Doorbell Fallback"
+    password: !secret ap_password
+
+# Fallback captive portal
+captive_portal:
+
+# Enable web server for debugging (optional, remove for production)
+web_server:
+  port: 80
+  auth:
+    username: !secret web_username
+    password: !secret web_password
+
+# Status LED (optional - uses built-in LED if available)
+status_led:
+  pin:
+    number: GPIO15  # Adjust based on your board's built-in LED
+    inverted: false
+
+# Binary Sensor - Doorbell Button
+binary_sensor:
+  # Doorbell button input
+  - platform: gpio
+    pin:
+      number: GPIO4
+      mode:
+        input: true
+        pullup: true  # Enable internal pull-up resistor
+      inverted: true  # Button press (LOW) = ON state
+    name: "Doorbell Button"
+    id: doorbell_button
+    device_class: occupancy  # Shows as presence/occupancy in HA
+    
+    # Debounce filter to avoid false triggers
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+    
+    # Actions when button is pressed
+    on_press:
+      then:
+        - logger.log: "Doorbell button pressed!"
+        # Optional: Turn on LED indicator
+        - if:
+            condition:
+              switch.is_on: auto_ring_enabled
+            then:
+              - logger.log: "Auto-ring enabled, activating ringer"
+              - switch.turn_on: doorbell_ringer
+              - delay: 2s  # Ring for 2 seconds
+              - switch.turn_off: doorbell_ringer
+            else:
+              - logger.log: "Auto-ring disabled, notification only"
+    
+    on_release:
+      then:
+        - logger.log: "Doorbell button released"
+
+  # WiFi connection status
+  - platform: status
+    name: "Doorbell Status"
+    id: doorbell_status
+
+# Switch - Doorbell Ringer Control
+switch:
+  # Relay/MOSFET control for the ringer
+  - platform: gpio
+    pin: GPIO2
+    name: "Doorbell Ringer"
+    id: doorbell_ringer
+    icon: "mdi:bell-ring"
+    restore_mode: ALWAYS_OFF  # Ensure ringer is off on reboot
+    
+    # Optional: Auto-off safety timer (max 10 seconds of ringing)
+    on_turn_on:
+      - logger.log: "Ringer activated"
+      - delay: 10s  # Maximum ring duration
+      - switch.turn_off: doorbell_ringer
+      - logger.log: "Ringer auto-off after 10s"
+  
+  # Virtual switch to enable/disable auto-ring feature
+  - platform: template
+    name: "Auto Ring Enabled"
+    id: auto_ring_enabled
+    icon: "mdi:bell-check"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON  # Default to enabled
+    on_turn_on:
+      - logger.log: "Auto-ring feature enabled"
+    on_turn_off:
+      - logger.log: "Auto-ring feature disabled (notification only)"
+
+# Sensors for diagnostics
+sensor:
+  # WiFi signal strength
+  - platform: wifi_signal
+    name: "Doorbell WiFi Signal"
+    update_interval: 60s
+  
+  # Uptime sensor
+  - platform: uptime
+    name: "Doorbell Uptime"
+    update_interval: 60s
+  
+  # Count how many times doorbell was pressed
+  - platform: template
+    name: "Doorbell Press Count"
+    id: press_count
+    icon: "mdi:counter"
+    accuracy_decimals: 0
+    state_class: total_increasing
+    unit_of_measurement: "presses"
+    lambda: |-
+      static int count = 0;
+      if (id(doorbell_button).state) {
+        count++;
+      }
+      return count;
+    update_interval: 1s
+
+# Text sensors for device info
+text_sensor:
+  # Device IP address
+  - platform: wifi_info
+    ip_address:
+      name: "Doorbell IP Address"
+    ssid:
+      name: "Doorbell WiFi SSID"
+  
+  # ESPHome version
+  - platform: version
+    name: "Doorbell ESPHome Version"
+
+# Time component (for time-based automations)
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+
+# Optional: Button entity for manual testing
+button:
+  # Restart button
+  - platform: restart
+    name: "Doorbell Restart"
+    icon: "mdi:restart"
+  
+  # Test ring button
+  - platform: template
+    name: "Test Ring"
+    icon: "mdi:bell-ring-outline"
+    on_press:
+      - logger.log: "Test ring activated"
+      - switch.turn_on: doorbell_ringer
+      - delay: 1s
+      - switch.turn_off: doorbell_ringer
+
+# Interval component for periodic tasks (optional)
+interval:
+  # Check system health every 5 minutes
+  - interval: 5min
+    then:
+      - logger.log:
+          format: "System health check - WiFi: %.1f dB, Uptime: %.1f hours"
+          args:
+            - id(doorbell_wifi_signal).state
+            - id(doorbell_uptime).state / 3600.0
