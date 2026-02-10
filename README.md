@@ -31,11 +31,19 @@ The system consists of:
 
 ## Documentation
 
-- [Parts List](PARTS_LIST.md) - All required components
-- [Schematic](SCHEMATIC.md) - Circuit diagrams and connections
-- [Assembly Guide](ASSEMBLY.md) - Step-by-step wiring instructions
+### Getting Started
+- **[Quick Start Guide](QUICKSTART.md)** - 30-minute setup overview ⚡
+- [Parts List](PARTS_LIST.md) - All required components and pricing
+- [Visual Wiring Guide](WIRING_VISUAL.md) - Easy-to-follow diagrams
+
+### Build Instructions
+- [Circuit Schematic](SCHEMATIC.md) - Detailed circuit diagrams
+- [Assembly Guide](ASSEMBLY.md) - Step-by-step wiring and installation
+
+### Software & Integration
 - [ESPHome Configuration](esphome-doorbell.yaml) - Firmware configuration
-- [Home Assistant Setup](homeassistant-automation.yaml) - Automation examples
+- [Secrets Template](secrets.yaml.example) - WiFi and password setup
+- [Home Assistant Automations](homeassistant-automation.yaml) - Automation examples
 
 ## Safety Notes
 
