@@ -193,7 +193,7 @@ Optional: If your relay can work at 3.7V, you can skip the boost converter
 ### Battery-Powered Simplified (No Boost)
 
 ```
-   [18650 Battery 3.7V]
+   [LiPo Battery 3.7V]  (e.g., from disposable vape)
          │
     ┌────┴─────────────┐           Many relays work
     │  TP4056 Module   │           at 3.3V-5V range
@@ -205,6 +205,64 @@ Optional: If your relay can work at 3.7V, you can skip the boost converter
 Note: ESP32-C6 can run from 3.0V-3.6V on 3V3 pin
       Some 5V relays may not trigger reliably at 3.7V
       Use a 3.3V relay module for battery operation
+      LiPo from disposable vapes typically 300-600mAh
+```
+
+### Battery Voltage Monitoring Circuit
+
+To monitor battery level in Home Assistant, add a voltage divider:
+
+```
+   Battery+  (TP4056 OUT+)
+      │
+    [100kΩ]  R1
+      │
+      ├────────── ESP32 GPIO5 (ADC)
+      │
+    [100kΩ]  R2
+      │
+     GND
+
+Voltage at GPIO5 = Battery Voltage × (R2 / (R1 + R2))
+With equal resistors: GPIO5 = Battery Voltage / 2
+
+LiPo voltage range: 3.0V (empty) to 4.2V (full)
+GPIO5 will see: 1.5V (empty) to 2.1V (full)
+
+ESP32-C6 ADC safe range: 0-3.3V ✓
+```
+
+### Complete Battery-Powered Circuit with Monitoring
+
+```
+  ┌─────────────────────────────────────────────────┐
+  │                                                 │
+  │  LiPo Battery (3.7V, from disposable vape)      │
+  │  ┌────────────┐                                 │
+  │  │ + ════ -   │  300-600mAh typical              │
+  │  └──┬──────┬──┘                                 │
+  │     │      │                                     │
+  │  ┌──┴──────┴────────┐                           │
+  │  │  TP4056 Charger   │                           │
+  │  │  ┌──┐  ┌──┐      │ ← Micro USB (charging)    │
+  │  │  │B+│  │B-│       │                           │
+  │  └───┬──────┬────────┘                           │
+  │      │      │                                     │
+  │   OUT+    OUT-                                   │
+  │      │      │                                     │
+  │      ├──────┼────── 100kΩ ──┬── GPIO5 (ADC)      │
+  │      │      │                │                    │
+  │      │      │          100kΩ│                    │
+  │      │      │                │                    │
+  │      │      └────────────────┴── GND             │
+  │      │                                            │
+  │   Switch                                          │
+  │      │                                            │
+  │      ├─────────────────────────── ESP32 3V3 Pin  │
+  │      │                                            │
+  │      └─────────────────────────── Relay VCC      │
+  │                                    (if 3.3V)     │
+  └────────────────────────────────────────────────────┘
 ```
 
 ## GPIO Pin Selection Rationale

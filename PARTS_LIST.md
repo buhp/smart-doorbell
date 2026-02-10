@@ -35,11 +35,18 @@ Choose **ONE** of the following:
 #### Option B: Battery Powered
 | Component | Quantity | Description |
 |-----------|----------|-------------|
-| 18650 Li-ion Battery | 1 | 3.7V, min 2000mAh |
+| LiPo Battery | 1 | 3.7V, 300-600mAh (from disposable vape) or 18650 (2000mAh+) |
 | TP4056 Charging Module | 1 | With protection circuit |
 | Switch | 1 | Power on/off switch |
-| Battery Holder | 1 | For 18650 battery |
+| Battery Holder | 1 | For 18650 (if using 18650) |
 | Boost Converter | 1 | 3.7V to 5V (optional, if relay needs 5V stable) |
+
+#### Option C: Battery with Voltage Monitoring
+| Component | Quantity | Value | Description |
+|-----------|----------|-------|-------------|
+| All from Option B | - | - | Battery setup |
+| Resistor | 2 | 100kΩ | Voltage divider for ADC |
+| Capacitor | 1 | 10µF | ADC stabilization (optional) |
 
 ### Connection Materials
 

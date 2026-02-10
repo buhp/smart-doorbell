@@ -82,8 +82,9 @@ Relay Module:
 
 ## Power Options
 
-**USB Powered (easiest)**: Just plug ESP32 into phone charger
-**Battery Powered**: Add 18650 battery + TP4056 charging module
+**USB Powered (easiest)**: Just plug ESP32 into phone charger  
+**Battery Powered**: Add 18650 battery + TP4056 charging module  
+**Battery + Monitoring**: Use recycled vape LiPo + see battery level in HA → [BATTERY_MONITORING.md](BATTERY_MONITORING.md)
 
 ## First Test
 

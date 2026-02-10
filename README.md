@@ -44,6 +44,7 @@ The system consists of:
 - [ESPHome Configuration](esphome-doorbell.yaml) - Firmware configuration
 - [Secrets Template](secrets.yaml.example) - WiFi and password setup
 - [Home Assistant Automations](homeassistant-automation.yaml) - Automation examples
+- [Battery Monitoring Guide](BATTERY_MONITORING.md) - Using recycled vape batteries with charge monitoring
 
 ## Safety Notes
 
