@@ -1,22 +1,34 @@
+# ESPHome Configuration for Smart Doorbell with Deep Sleep
+# ESP32-C6 DevKit Smart Doorbell System - Battery Optimized
+# 
+# This configuration provides:
+# - Deep sleep mode for extended battery life (1-2 weeks with 500mAh)
+# - Wake on button press (instant response)
+# - Wake every 15 minutes to report battery status
+# - Keep Awake mode for OTA updates and testing
+# - All standard doorbell features
+
 esphome:
   name: smart-doorbell
   friendly_name: Smart Doorbell
-  comment: ESP32-C6 Smart Doorbell with HA Integration
+  comment: ESP32-C6 Smart Doorbell with Deep Sleep
   
-  # Optional: Run actions when device boots
+  # On boot, check if we should stay awake or enter deep sleep
   on_boot:
     priority: -100
     then:
-      # Ensure ringer is off on boot
       - switch.turn_off: doorbell_ringer
       - logger.log: "Smart Doorbell System Started"
-      # Check if we should stay awake or enter deep sleep
+      # Log wakeup reason
+      - lambda: |-
+          ESP_LOGI("boot", "Wakeup cause: %d", esp_sleep_get_wakeup_cause());
+          // 0=Reset, 2=GPIO (button), 4=Timer
+      # If keep_awake is off, enter deep sleep after reporting
       - if:
           condition:
             switch.is_off: keep_awake_mode
           then:
-            # Enter deep sleep after 30 seconds if keep_awake is off
-            - delay: 30s
+            - delay: 30s  # Time to connect, report status, handle automations
             - deep_sleep.enter: deep_sleep_control
 
 esp32:
@@ -25,38 +37,79 @@ esp32:
   framework:
     type: esp-idf
 
+# Deep Sleep Configuration
+# Optimized for battery life while maintaining responsiveness
+deep_sleep:
+  id: deep_sleep_control
+  
+  # Wake every 15 minutes to report battery status to Home Assistant
+  # Adjust between 5min-60min based on your needs
+  sleep_duration: 15min
+  
+  # Wake immediately when doorbell button is pressed
+  wakeup_pin:
+    number: GPIO4
+    mode:
+      input: true
+      pullup: true
+    inverted: true  # Wake when button pulls pin LOW
+    wakeup_pin_mode: KEEP_AWAKE  # Don't sleep while button is held
+  
+  # How long to stay awake based on wakeup reason
+  run_duration:
+    default: 30s              # Timer wakeup: connect WiFi, report battery, sleep
+    gpio_wakeup_reason: 60s   # Button press: ring bell, report to HA, sleep
+
 # Enable logging
 logger:
   level: INFO
+  logs:
+    deep_sleep: DEBUG  # See sleep/wake activity
 
 # Enable Home Assistant API
 api:
   encryption:
     key: !secret api_encryption_key
   services:
-    # Create a service to ring the bell from HA
+    # Service to ring doorbell from Home Assistant
     - service: ring_doorbell
       variables:
         duration: int
       then:
+        - deep_sleep.prevent: deep_sleep_control  # Don't sleep while ringing
         - logger.log: 
             format: "Ringing doorbell for %d ms"
             args: [ 'duration' ]
         - switch.turn_on: doorbell_ringer
         - delay: !lambda "return duration;"
         - switch.turn_off: doorbell_ringer
+        - if:
+            condition:
+              switch.is_off: keep_awake_mode
+            then:
+              - delay: 5s
+              - deep_sleep.allow: deep_sleep_control
+              - deep_sleep.enter: deep_sleep_control
 
 # Enable OTA updates
 ota:
   - platform: esphome
     password: !secret ota_password
+    # Prevent deep sleep during OTA
+    on_begin:
+      - deep_sleep.prevent: deep_sleep_control
+    on_end:
+      - deep_sleep.allow: deep_sleep_control
 
 # WiFi configuration
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   
-  # Enable fallback hotspot (captive portal) in case WiFi fails
+  # Reduce WiFi power to save battery (optional)
+  # output_power: 8.5dB  # Reduces range but saves ~20mA
+  
+  # Enable fallback hotspot
   ap:
     ssid: "Smart-Doorbell Fallback"
     password: !secret ap_password
@@ -64,9 +117,16 @@ wifi:
 # Fallback captive portal
 captive_portal:
 
-# Enable web server for debugging (optional, remove for production)
+# Web server disabled for battery saving
+# Enable temporarily by uncommenting for debugging
 # web_server:
-# port: 80
+#   port: 80
+
+# Status LED (optional - uses built-in LED if available)
+status_led:
+  pin:
+    number: GPIO15
+    inverted: false
 
 # Binary Sensor - Doorbell Button
 binary_sensor:
@@ -76,37 +136,44 @@ binary_sensor:
       number: GPIO4
       mode:
         input: true
-        pullup: true  # Enable internal pull-up resistor
-      inverted: true  # Button press (LOW) = ON state
-      allow_other_uses: true  # Shared with deep_sleep wakeup
+        pullup: true
+      inverted: true
     name: "Doorbell Button"
     id: doorbell_button
-    device_class: occupancy  # Shows as presence/occupancy in HA
+    device_class: occupancy
     
-    # Debounce filter to avoid false triggers
     filters:
       - delayed_on: 50ms
       - delayed_off: 50ms
     
-    # Actions when button is pressed
+    # When button pressed
     on_press:
       then:
         - logger.log: "Doorbell button pressed!"
-        # Optional: Turn on LED indicator
+        - deep_sleep.prevent: deep_sleep_control
+        
+        # Ring if auto-ring enabled
         - if:
             condition:
               switch.is_on: auto_ring_enabled
             then:
               - logger.log: "Auto-ring enabled, activating ringer"
               - switch.turn_on: doorbell_ringer
-              - delay: 0.3s  # Ring for 2 seconds
-              - switch.turn_off: doorbell_ringer
-              - delay: 0.5s  # Ring for 2 seconds
-              - switch.turn_on: doorbell_ringer
-              - delay: 0.3s  # Ring for 2 seconds
+              - delay: 2s
               - switch.turn_off: doorbell_ringer
             else:
               - logger.log: "Auto-ring disabled, notification only"
+        
+        # Allow Home Assistant to receive notification
+        - delay: 5s
+        
+        # Re-enter sleep if keep_awake is off
+        - if:
+            condition:
+              switch.is_off: keep_awake_mode
+            then:
+              - deep_sleep.allow: deep_sleep_control
+              - deep_sleep.enter: deep_sleep_control
     
     on_release:
       then:
@@ -117,81 +184,66 @@ binary_sensor:
     name: "Doorbell Status"
     id: doorbell_status
 
-# Deep Sleep Configuration
-# Wakes on button press OR every 15 minutes to report battery status
-deep_sleep:
-  id: deep_sleep_control
-  sleep_duration: 15min
-  
-  # Wake when doorbell button is pressed
-  # ESP32-C6 uses ext1 wakeup (supports C6/S2/S3 variants)
-  esp32_ext1_wakeup:
-    pins:
-      - number: GPIO4
-        allow_other_uses: true  # Allow sharing with binary_sensor
-    mode: ANY_LOW  # Wake when GPIO4 goes LOW (button pressed)
-  
-  # How long to stay awake based on wakeup reason
-  run_duration:
-    default: 30s              # Timer wakeup: report battery and sleep
-    gpio_wakeup_reason: 60s   # Button press: ring bell and sleep
-
 # Switch - Doorbell Ringer Control
 switch:
-  # Relay/MOSFET control for the ringer
+  # Relay control for the ringer
   - platform: gpio
     pin: GPIO2
     name: "Doorbell Ringer"
     id: doorbell_ringer
     icon: "mdi:bell-ring"
-    restore_mode: ALWAYS_OFF  # Ensure ringer is off on reboot
+    restore_mode: ALWAYS_OFF
     
-    # Optional: Auto-off safety timer (max 10 seconds of ringing)
+    # Auto-off safety timer
     on_turn_on:
       - logger.log: "Ringer activated"
-      - delay: 1s  # Maximum ring duration
+      - delay: 10s
       - switch.turn_off: doorbell_ringer
-      - logger.log: "Ringer auto-off after 1s"
+      - logger.log: "Ringer auto-off after 10s"
   
-  # Virtual switch to enable/disable auto-ring feature
+  # Enable/disable auto-ring
   - platform: template
     name: "Auto Ring Enabled"
     id: auto_ring_enabled
     icon: "mdi:bell-check"
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF # Default to enabled
+    restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
-      - logger.log: "Auto-ring feature enabled"
+      - logger.log: "Auto-ring enabled"
     on_turn_off:
-      - logger.log: "Auto-ring feature disabled (notification only)"  
-  # Keep Awake Mode - prevents deep sleep when enabled
-  # Use this for OTA updates or when you need the device always online
+      - logger.log: "Auto-ring disabled (notification only)"
+  
+  # Keep Awake Mode - prevents deep sleep
+  # Enable this before OTA updates or for debugging
   - platform: template
     name: "Keep Awake Mode"
     id: keep_awake_mode
     icon: "mdi:sleep-off"
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF  # Default to allowing sleep (battery saving)
+    restore_mode: RESTORE_DEFAULT_OFF  # Default: allow sleep (save battery)
     on_turn_on:
-      - logger.log: "Keep awake mode enabled - deep sleep prevented"
+      - logger.log: "Keep awake mode ON - deep sleep prevented"
       - deep_sleep.prevent: deep_sleep_control
     on_turn_off:
-      - logger.log: "Keep awake mode disabled - deep sleep allowed"
+      - logger.log: "Keep awake mode OFF - entering deep sleep"
       - deep_sleep.allow: deep_sleep_control
-      # Enter deep sleep after 30 seconds
-      - delay: 30s
+      - delay: 30s  # Time to finish any pending operations
       - deep_sleep.enter: deep_sleep_control
 
-# Sensors for diagnostics
+# Sensors
 sensor:
-  # Wakeup cause - shows why device woke from deep sleep
+  # Wakeup cause - shows why device woke from sleep
   - platform: template
     name: "Wakeup Cause"
     id: wakeup_cause
     accuracy_decimals: 0
+    icon: "mdi:sleep"
     lambda: |-
-      return esp_sleep_get_wakeup_cause();
-    # 2=GPIO (button), 4=Timer, 0=Reset/First boot
+      int cause = esp_sleep_get_wakeup_cause();
+      // 0=Reset, 2=GPIO, 4=Timer
+      return cause;
+    # Update only on boot
+    update_interval: never
   
   # WiFi signal strength
   - platform: wifi_signal
@@ -205,22 +257,18 @@ sensor:
     id: doorbell_uptime
     update_interval: 60s
   
-  # Battery voltage monitoring (for battery-powered setups)
-  # Connect battery+ through 100kΩ + 100kΩ voltage divider to GPIO5
+  # Battery voltage monitoring
   - platform: adc
     pin: GPIO5
     name: "Battery Voltage"
     id: battery_voltage
     update_interval: 30s
-    attenuation: 11dB  # Allows reading up to ~3.3V
+    attenuation: 11dB
     filters:
-      # Multiply by 2 because of voltage divider (100kΩ + 100kΩ)
-      - multiply: 2.0
-      # Apply calibration offset if needed
+      - multiply: 2.0  # Voltage divider compensation
       - calibrate_linear:
           - 0.0 -> 0.0
           - 3.3 -> 3.3
-      # Smooth out readings
       - sliding_window_moving_average:
           window_size: 10
           send_every: 5
@@ -228,10 +276,8 @@ sensor:
     device_class: voltage
     state_class: measurement
     accuracy_decimals: 2
-    # Disable if not using battery power (comment out entire sensor)
-    # or use a compile-time condition
   
-  # Battery percentage (calculated from voltage)
+  # Battery percentage
   - platform: template
     name: "Battery Level"
     id: battery_level
@@ -241,7 +287,6 @@ sensor:
     accuracy_decimals: 0
     icon: "mdi:battery"
     lambda: |-
-      // LiPo voltage range: 3.0V (0%) to 4.2V (100%)
       float voltage = id(battery_voltage).state;
       float min_voltage = 3.0;
       float max_voltage = 4.2;
@@ -249,11 +294,11 @@ sensor:
       if (voltage < min_voltage) return 0.0;
       if (voltage > max_voltage) return 100.0;
       
-      // Linear approximation (for better accuracy, use lookup table)
       float percentage = ((voltage - min_voltage) / (max_voltage - min_voltage)) * 100.0;
       return percentage;
     update_interval: 30s
-    # Dynamic icon based on battery level
+    
+    # Dynamic battery icon
     on_value:
       then:
         - lambda: |-
@@ -272,7 +317,7 @@ sensor:
               id(battery_level).set_icon("mdi:battery-alert");
             }
   
-  # Count how many times doorbell was pressed
+  # Doorbell press counter
   - platform: template
     name: "Doorbell Press Count"
     id: press_count
@@ -288,53 +333,64 @@ sensor:
       return count;
     update_interval: 1s
 
-# Text sensors for device info
+# Text sensors
 text_sensor:
-  # Device IP address
+  # Device information
   - platform: wifi_info
     ip_address:
       name: "Doorbell IP Address"
     ssid:
       name: "Doorbell WiFi SSID"
   
-  # ESPHome version
   - platform: version
     name: "Doorbell ESPHome Version"
+  
+  # Wakeup reason as text
+  - platform: template
+    name: "Wakeup Reason"
+    icon: "mdi:information-outline"
+    lambda: |-
+      int cause = esp_sleep_get_wakeup_cause();
+      switch(cause) {
+        case 0: return {"Power On / Reset"};
+        case 2: return {"Button Pressed (GPIO)"};
+        case 4: return {"Timer (Scheduled Wake)"};
+        default: return {"Unknown: " + to_string(cause)};
+      }
+    update_interval: never
 
-# Time component (for time-based automations)
+# Time component
 time:
   - platform: homeassistant
     id: homeassistant_time
 
-# Optional: Button entity for manual testing
+# Buttons
 button:
-  # Restart button
+  # Restart device
   - platform: restart
     name: "Doorbell Restart"
     icon: "mdi:restart"
   
-  # Test ring button
+  # Test ring
   - platform: template
     name: "Test Ring"
     icon: "mdi:bell-ring-outline"
     on_press:
+      - deep_sleep.prevent: deep_sleep_control
       - logger.log: "Test ring activated"
       - switch.turn_on: doorbell_ringer
-      - delay: 0.5s
+      - delay: 1s
       - switch.turn_off: doorbell_ringer
+      - if:
+          condition:
+            switch.is_off: keep_awake_mode
+          then:
+            - delay: 5s
+            - deep_sleep.allow: deep_sleep_control
+            - deep_sleep.enter: deep_sleep_control
 
-# Interval component for periodic tasks (optional)
+# Intervals for health monitoring
 interval:
-  # Check system health every 5 minutes
-  - interval: 5min
-    then:
-      - logger.log:
-          format: "System health check - WiFi: %.1f dB, Uptime: %.1f hours, Battery: %.1f%%"
-          args:
-            - id(doorbell_wifi_signal).state
-            - id(doorbell_uptime).state / 3600.0
-            - id(battery_level).state
-  
   # Low battery warning
   - interval: 30min
     then:
@@ -344,7 +400,7 @@ interval:
           then:
             - logger.log:
                 level: WARN
-                format: "Low battery warning: %.0f%% remaining (%.2fV)"
+                format: "Low battery: %.0f%% (%.2fV)"
                 args:
                   - id(battery_level).state
                   - id(battery_voltage).state
